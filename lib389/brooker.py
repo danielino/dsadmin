@@ -34,6 +34,56 @@ from lib389._constants import (
 from lib389._replication import RUV, CSN
 from lib389._entry import FormatDict
 
+class Agreement(object):
+    proxied_methods = 'search_s getEntry'.split()
+    ALWAYS = '0000-2359 0123456'
+    NEVER = '2358-2359 0'
+
+    def __init__(self, conn):
+        """@param conn - a DSAdmin instance"""
+        self.conn = conn
+        self.log = conn.log
+
+    def __getattr__(self, name):
+        if name in Replica.proxied_methods:
+            return DSAdmin.__getattr__(self.conn, name)
+
+    def status(self, agreement_dn):
+        """Return a formatted string with the replica status.
+            @param agreement_dn - 
+        """
+
+        attrlist = ['cn', 'nsds5BeginReplicaRefresh', 'nsds5replicaUpdateInProgress',
+                    'nsds5ReplicaLastInitStatus', 'nsds5ReplicaLastInitStart',
+                    'nsds5ReplicaLastInitEnd', 'nsds5replicaReapActive',
+                    'nsds5replicaLastUpdateStart', 'nsds5replicaLastUpdateEnd',
+                    'nsds5replicaChangesSentSinceStartup', 'nsds5replicaLastUpdateStatus',
+                    'nsds5replicaChangesSkippedSinceStartup', 'nsds5ReplicaHost',
+                    'nsds5ReplicaPort']
+        try:
+            ent = self.conn.getEntry(
+                agreement_dn, ldap.SCOPE_BASE, "(objectclass=*)", attrlist)
+        except NoSuchEntryError:
+            raise NoSuchEntryError(
+                "Error reading status from agreement", agreement_dn)
+        else:
+            retstr = (
+                "Status for %(cn)s agmt %(nsDS5ReplicaHost)s:%(nsDS5ReplicaPort)s" "\n"
+                "Update in progress: %(nsds5replicaUpdateInProgress)s" "\n"
+                "Last Update Start: %(nsds5replicaLastUpdateStart)s" "\n"
+                "Last Update End: %(nsds5replicaLastUpdateEnd)s" "\n"
+                "Num. Changes Sent: %(nsds5replicaChangesSentSinceStartup)s" "\n"
+                "Num. changes Skipped: %(nsds5replicaChangesSkippedSinceStartup)s" "\n"
+                "Last update Status: %(nsds5replicaLastUpdateStatus)s" "\n"
+                "Init in progress: %(nsds5BeginReplicaRefresh)s" "\n"
+                "Last Init Start: %(nsds5ReplicaLastInitStart)s" "\n"
+                "Last Init End: %(nsds5ReplicaLastInitEnd)s" "\n"
+                "Last Init Status: %(nsds5ReplicaLastInitStatus)s" "\n"
+                "Reap Active: %(nsds5ReplicaReapActive)s" "\n"
+            )
+            # FormatDict manages missing fields in string formatting
+            return retstr % FormatDict(ent.data)
+
 
 class Replica(object):
     proxied_methods = 'search_s getEntry'.split()
@@ -184,43 +234,8 @@ class Replica(object):
         self.log.info("Setting agreement for continuous replication")
         raise NotImplementedError("Check nsds5replicaupdateschedule before writing!")
 
-    def status(self, agreement_dn):
-        """Return a formatted string with the replica status.
-            @param agreement_dn - 
-        """
 
-        attrlist = ['cn', 'nsds5BeginReplicaRefresh', 'nsds5replicaUpdateInProgress',
-                    'nsds5ReplicaLastInitStatus', 'nsds5ReplicaLastInitStart',
-                    'nsds5ReplicaLastInitEnd', 'nsds5replicaReapActive',
-                    'nsds5replicaLastUpdateStart', 'nsds5replicaLastUpdateEnd',
-                    'nsds5replicaChangesSentSinceStartup', 'nsds5replicaLastUpdateStatus',
-                    'nsds5replicaChangesSkippedSinceStartup', 'nsds5ReplicaHost',
-                    'nsds5ReplicaPort']
-        try:
-            ent = self.conn.getEntry(
-                agreement_dn, ldap.SCOPE_BASE, "(objectclass=*)", attrlist)
-        except NoSuchEntryError:
-            raise NoSuchEntryError(
-                "Error reading status from agreement", agreement_dn)
-        else:
-            retstr = (
-                "Status for %(cn)s agmt %(nsDS5ReplicaHost)s:%(nsDS5ReplicaPort)s" "\n"
-                "Update in progress: %(nsds5replicaUpdateInProgress)s" "\n"
-                "Last Update Start: %(nsds5replicaLastUpdateStart)s" "\n"
-                "Last Update End: %(nsds5replicaLastUpdateEnd)s" "\n"
-                "Num. Changes Sent: %(nsds5replicaChangesSentSinceStartup)s" "\n"
-                "Num. changes Skipped: %(nsds5replicaChangesSkippedSinceStartup)s" "\n"
-                "Last update Status: %(nsds5replicaLastUpdateStatus)s" "\n"
-                "Init in progress: %(nsds5BeginReplicaRefresh)s" "\n"
-                "Last Init Start: %(nsds5ReplicaLastInitStart)s" "\n"
-                "Last Init End: %(nsds5ReplicaLastInitEnd)s" "\n"
-                "Last Init Status: %(nsds5ReplicaLastInitStatus)s" "\n"
-                "Reap Active: %(nsds5ReplicaReapActive)s" "\n"
-            )
-            # FormatDict manages missing fields in string formatting
-            return retstr % FormatDict(ent.data)
-
-    def add(self, suffix, binddn, bindpw, rtype=MASTER_TYPE, rid=None, tombstone_purgedelay=None, purgedelay=None, referrals=None, legacy=False):
+    def add(self, suffix, binddn, bindpw=None, rtype=MASTER_TYPE, rid=None, tombstone_purgedelay=None, purgedelay=None, referrals=None, legacy=False):
         """Setup a replica entry on an existing suffix.
             @param suffix - dn of suffix
             @param binddn - the replication bind dn for this replica
